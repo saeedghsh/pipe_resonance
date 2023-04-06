@@ -68,7 +68,6 @@ def binarize(image_in: numpy.ndarray, mode: str, ksize: int = None, thresh: int 
 
 def skeletonize(
     image_in: numpy.ndarray,
-    skeleton_roi: Optional[numpy.ndarray] = None,
     skeleton_radius: int = 9,
     erosion_size: int = 3
 ):
@@ -84,8 +83,6 @@ def skeletonize(
     laplace_img = ndimage.morphological_laplace(distance_img, (skeleton_radius, skeleton_radius))
     laplace_img = cv2.normalize(laplace_img, None, 0, 1.0, cv2.NORM_MINMAX)
     skeleton_mask = laplace_img < laplace_img.max() / 7
-    if skeleton_roi is not None:
-        skeleton_mask &= skeleton_roi.astype(bool)
     skeleton_image = image_in.copy()
     skeleton_image *= 0
     skeleton_image[skeleton_mask] = 255.0

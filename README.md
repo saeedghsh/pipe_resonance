@@ -11,11 +11,12 @@
 * [x] draw border around images
 * [x] draw deviation distribution
 * [x] any assumption of a vertical line is invalid, overhaul!
-* [ ] we still have issue with detecting points! "points from skeleton" needs to be
+* [x] we still have issue with detecting points! "points from skeleton" needs to be
   - robust,
   - more deterministic, and
   - have better parametrization.
-* [ ] how to distinguish the deviation at different height of the pipe?
+* [ ] how to distinguish points at different height of the pipe?
+* [ ] define what is a "deviation", from which the "resonance" is to be estimated
 
 ## not sure if actually needed (atleast for now now)
 * [ ] find checker board
@@ -23,5 +24,3 @@
 * - [ ] block out checker board
 * [ ] detect if stobe is on/off  
       draw a red circle around strobe light when it is detected to be on
-* [ ] the skeleton thing seems redundant, just eroding the binary should do?  
-      but the skeleton would make it general/invariant to previous morph processes

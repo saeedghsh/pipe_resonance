@@ -102,3 +102,15 @@ def draw_scene_configuration(
         draw_corssed_circle(image, location, rad, RED)
         write(image, text, location + text_offset, RED)
     return image
+
+
+
+def draw_lableled_image(labels):
+    # Map component labels to hue val
+    label_hue = numpy.uint8(179 * labels / numpy.max(labels))
+    blank_ch = 255 * numpy.ones_like(label_hue)
+    labeled_img = cv2.merge([label_hue, blank_ch, blank_ch])
+    labeled_img = cv2.cvtColor(labeled_img, cv2.COLOR_HSV2BGR)
+    # set bg label to black
+    labeled_img[label_hue==0] = 0
+    return labeled_img

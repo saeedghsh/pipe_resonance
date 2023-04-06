@@ -59,6 +59,7 @@ class Pipe:
 
 
 # TODO: refactor this shit! the logic of this (is_set and set) and the cv2 operation are mixed in the callback function
+# TODO: either remover the getters for strobe and pipe (that are not wrt backdrop) or issue a warning! somehow!
 class SceneConfiguration:
     def __init__(self, backdrop = AxisAlignedBox(), strobe = Strobe(), pipe = Pipe(), checkerboard = AxisAlignedBox()):
         self._backdrop = backdrop

@@ -1,7 +1,7 @@
 """"""
 
 from typing import Tuple, NewType
-
+import numpy
 
 Color = NewType('Color', Tuple[int, int, int])
 
@@ -41,6 +41,11 @@ class Pixel:
     @x.setter
     def x(self, x: int):
         self.col = x
+    
+    def as_numpy_2darray_rc(self) -> numpy.ndarray:
+        return numpy.atleast_2d([[self.row, self.col]])
+    def as_numpy_2darray_xy(self) -> numpy.ndarray:
+        return numpy.atleast_2d([[self.x, self.y]])
 
     def __add__(self, other: "Pixel") -> "Pixel":
         return Pixel(row=self.row+other.row, col=self.col+other.col)
