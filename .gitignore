@@ -1,0 +1,13 @@
+.vscode/
+logs/
+results/
+nohup.out
+
+*.pyc
+*~
+__pycache__
+
+htmlcov/
+.coverage
+coverage.xml
+profile.out

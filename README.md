@@ -15,8 +15,12 @@
   - robust,
   - more deterministic, and
   - have better parametrization.
+* [ ] disable strobe for now
+* [ ] write usage instruction
 * [ ] how to distinguish points at different height of the pipe?
 * [ ] define what is a "deviation", from which the "resonance" is to be estimated
+* [ ] include formatter in the repo's CI
+
 
 ## not sure if actually needed (atleast for now now)
 * [ ] find checker board

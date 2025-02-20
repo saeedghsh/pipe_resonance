@@ -10,7 +10,7 @@ from scipy.spatial.distance import cdist
 from user_defined_types import Pixel
 from scene_configuration import SceneConfiguration
 from image_morph import equalize, blur, binarize, skeletonize
-from image_draw import RED, BLUE, draw_points, write, draw_scene_configuration, draw_lableled_image
+from image_draw import RED, BLUE, GREEN, draw_points, draw_circle, write, draw_scene_configuration, draw_lableled_image
 
 RESIZE = 0.2  # resizing factor of the image
 
@@ -60,7 +60,83 @@ def _parametrize_pipe():
     # treat it as a path planning problem
     # start from one end and traverse to the other end
     # distribute a predefined number of points uniformly
+
+    # an iterative approach that is based on the distance between points (alpha), not their numbers...
+    # 1. compute pdist distance_matrix
+    # 2. find the point closest to the pipe.top, call its index current_idx
+    # 3. put current_idx in closed list
+    # 4. if the closed list is full, terminate
+    # 4. select the row of current_idx in distance_matrix
+    # 5. in that row find the index to the column that has closest distance to alpha, call it next_idx
+    # 6. find all indices to columns that has distance less than alpha, put them in the closed list
+    # 7. current_idx = next_idx, and go to step 3
     return
+
+
+# def equidistant_points(points, distance):
+#     """
+#     Given a 2D numpy array of points, return a subsequence of the original
+#     points that are equidistant from each other, where the distance between
+#     each consecutive point is given by the input distance.
+#     """
+#     n = len(points)
+#     distances = numpy.zeros(n)
+#     distances[1:] = numpy.linalg.norm(points[1:] - points[:-1], axis=1)
+#     cumulative_distances = numpy.cumsum(distances)
+#     total_distance = cumulative_distances[-1]
+#     num_points = int(numpy.ceil(total_distance / distance))
+#     indices = numpy.arange(n)
+#     t = numpy.linspace(0, total_distance, n)
+#     equidistant_t = numpy.linspace(0, total_distance, num_points)
+#     indices_equidistant_t = numpy.searchsorted(cumulative_distances, equidistant_t)
+#     indices_equidistant_t = numpy.clip(indices_equidistant_t, 0, n-1)
+#     selected_indices = indices[indices_equidistant_t]
+#     return points[selected_indices]
+
+
+def equidistant_points(points, num_points):
+    """
+    Given a 2D numpy array of points, return a subsequence of the original
+    points that are equidistant from each other, where the number of output
+    points is given by the input num_points.
+    """
+    n = len(points)
+    distances = numpy.zeros(n)
+    distances[1:] = numpy.linalg.norm(points[1:] - points[:-1], axis=1)
+    cumulative_distances = numpy.cumsum(distances)
+    total_distance = cumulative_distances[-1]
+    indices = numpy.arange(n)
+    # equidistant_indices = numpy.linspace(0, n-1, num_points).astype(int)
+    equidistant_t = numpy.linspace(0, total_distance, num_points)
+    indices_equidistant_t = numpy.searchsorted(cumulative_distances, equidistant_t)
+    indices_equidistant_t = numpy.clip(indices_equidistant_t, 0, n-1)
+    selected_indices = indices[indices_equidistant_t]
+    return points[selected_indices]
+
+
+def equidistant_points_varying_thickness(points, num_points):
+    """
+    Given a 2D numpy array of points with varying thickness, return a subsequence
+    of the original points that are equidistant from each other, where the number
+    of output points is given by the input num_points. The thickness of the curve
+    is assumed to vary along the direction perpendicular to the curve.
+    """
+    n = len(points)
+    distances = numpy.zeros(n)
+    for i in range(1, n):
+        v1 = points[i] - points[i-1]
+        v2 = numpy.array([-v1[1], v1[0]])  # vector perpendicular to curve
+        d = numpy.abs(numpy.cross(points[i] - points[i-1], v2))  # perpendicular distance
+        distances[i] = d
+    cumulative_distances = numpy.cumsum(distances)
+    total_distance = cumulative_distances[-1]
+    indices = numpy.arange(n)
+    # equidistant_indices = numpy.linspace(0, n-1, num_points).astype(int)
+    equidistant_t = numpy.linspace(0, total_distance, num_points)
+    indices_equidistant_t = numpy.searchsorted(cumulative_distances, equidistant_t)
+    indices_equidistant_t = numpy.clip(indices_equidistant_t, 0, n-1)
+    selected_indices = indices[indices_equidistant_t]
+    return points[selected_indices]
 
 
 def _process_frame(
@@ -123,8 +199,8 @@ def scene_configuration_callback(event, x, y, flags, params):
 ret, frame = cap.read()
 assert ret is True, "failed to read frame from video capture"
 image = _process_frame(frame, scene_configuration, convert_to_gray=False)
-cv2.imshow("scene_config", image)
-cv2.setMouseCallback("scene_config", scene_configuration_callback)
+cv2.imshow("scene_configuration", image)
+cv2.setMouseCallback("scene_configuration", scene_configuration_callback)
 cv2.waitKey(0)
 
 # draw scene config
@@ -177,6 +253,9 @@ while(cap.isOpened()):
     ) = skeletonize(binary, skeleton_radius=9, erosion_size=None)
     pipe_image, labels = _find_pipe(skeleton_image_eroded, scene_configuration)
     pipe_points = _nonzero_points_as_numpy_2darray_rc(pipe_image)
+    # pipe_points_subsampled = equidistant_points(pipe_points, distance=100)
+    # pipe_points_subsampled = equidistant_points(pipe_points, num_points=10)
+    pipe_points_subsampled = equidistant_points_varying_thickness(pipe_points, num_points=10)
 
     image_hieght, image_width = gray_resized_cropped.shape
     images = {
@@ -193,6 +272,9 @@ while(cap.isOpened()):
         location = Pixel(row=15, col=i * image_width + 1)
         image_display = write(image_display, text, location, BLUE)
     image_display = draw_points(image_display, pipe_points, RED)
+    for p in pipe_points_subsampled:
+        center = Pixel(row=p[0], col=p[1])
+        image_display = draw_circle(image_display, center=center, radius=3, color=GREEN, thickness=2)
     cv2.imshow('display', image_display)
 
     # TODO: this deviation estimate only works with vertical pipe assumption
