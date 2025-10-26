@@ -1,0 +1,10 @@
+name: pipe_resonance
+channels:
+  - conda-forge
+dependencies:
+  - python=3.11
+  - opencv
+  - numpy
+  - matplotlib
+  - pydantic
+  - pip

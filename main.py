@@ -1,303 +1,534 @@
 #!/usr/bin/env python
-"""Main script to launch examples from."""
 
-import numpy
+# "air_set/WhatsApp Video 2025-04-19 at 20.04.04.mp4"
+# "air_set/WhatsApp Video 2025-04-19 at 20.06.10.mp4"
+
+# python main.py "air_set/WhatsApp Video 2025-04-19 at 20.04.04.mp4" --manual-init --debug-video debug.mp4 --plot
+# ffmpeg -i debug.mp4 -vcodec libx264 -pix_fmt yuv420p -preset veryfast -crf 23 -movflags +faststart debug_wapp_comatible.mp4
+
+import argparse
+import csv
+import math
+from typing import List, Optional, Tuple
+
 import cv2
-from typing import Tuple, Optional, List, Any
 import matplotlib.pyplot as plt
-from scipy.spatial.distance import cdist
-
-from user_defined_types import Pixel
-from scene_configuration import SceneConfiguration
-from image_morph import equalize, blur, binarize, skeletonize
-from image_draw import RED, BLUE, GREEN, draw_points, draw_circle, write, draw_scene_configuration, draw_lableled_image
-
-RESIZE = 0.2  # resizing factor of the image
-
-EQUALIZATION_MODE = ["histogram", "clahe", None, ][1]
-EQUALIZATION_KERNEL_SIZE = 8
-
-BLURRING_MODE = ["blur", "GaussianBlur", "medianBlur", "bilateralFilter", None, ][0]
-BLURRING_KERNEL_SIZE = 15
-
-BINARIZATION_MODE = ["thresh_binary", "thresh_otsu", "adaptive_thresh_gaussian", "adaptive_thresh_mean", None, ][1]
-BINARIZATION_THRESHOLD = 100
-BINARIZATION_KERNEL_SIZE = 9
-
-PIPE_WIDTH_PIXEL = 10
-
-### open video capture
-# first example
-video_file_path = "/home/saeed/Downloads/IMG_5115.MOV"
-# ffmpeg -i IMG_5115.MOV -ss 00:00:14 -t 00:00:40 -c:v copy -c:a copy output1.mp4
-video_file_path = "/home/saeed/Downloads/IMG_5115_trimmed.mp4"
-
-# # second example 
-# video_file_path = "/home/saeed/Downloads/2023_03_12_5ft_Silicone_OD_7_8_SN_View.MOV"
-# # ffmpeg -i 2023_03_12_5ft_Silicone_OD_7_8_SN_View.MOV -ss 00:00:20 -t 00:00:50 -c:v copy -c:a copy 2023_03_12_5ft_Silicone_OD_7_8_SN_View_trimmed.mp4
-# video_file_path = "/home/saeed/Downloads/2023_03_12_5ft_Silicone_OD_7_8_SN_View_trimmed.mp4"
-
-# video_file_path = "/home/saeed/Downloads/2023_03_12_5ft_Silicone_OD_7_8_WE_View.MOV"
-# # ffmpeg -i 2023_03_12_5ft_Silicone_OD_7_8_WE_View.MOV -ss 00:00:05 -t 00:00:35 -c:v copy -c:a copy 2023_03_12_5ft_Silicone_OD_7_8_WE_View_trimmed.mp4
-# video_file_path = "/home/saeed/Downloads/2023_03_12_5ft_Silicone_OD_7_8_WE_View_trimmed.mp4"
-
-# # 20230328
-# video_file_path = "/home/saeed/Downloads/pipe_resonance-20230401T095353Z-001/pipe_resonance/20230328_3.8x3.4_tube_strobe4800fpm_camera240fps/South_North.MOV"
-# # ffmpeg -i South_North.MOV -ss 00:00:06 -t 00:00:40 -c:v copy -c:a copy South_North_trimmed.mp4
-# # video_file_path = "/home/saeed/Downloads/pipe_resonance-20230401T095353Z-001/pipe_resonance/20230328_3.8x3.4_tube_strobe4800fpm_camera240fps/South_North_trimmed.MOV"
-
-# video_file_path = "/home/saeed/Downloads/pipe_resonance-20230401T095353Z-001/pipe_resonance/2023-04-03 at 02.36.31_upward.mp4"
-# video_file_path = "/home/saeed/Downloads/2023.04.03. 5,8x7,8 tube, Upward Riser, 60 fps.MOV"
+import numpy as np
+from pydantic import BaseModel, Field
 
 
-def _nonzero_points_as_numpy_2darray_rc(skeleton: numpy.ndarray) -> numpy.ndarray:
-    rows, cols = numpy.nonzero(skeleton)
-    return numpy.array([rows, cols]).T
+class ROIConfig(BaseModel):
+    """Configure horizontal search bands and vertical gating."""
 
-
-def _parametrize_pipe():
-    # TODO:
-    # treat it as a path planning problem
-    # start from one end and traverse to the other end
-    # distribute a predefined number of points uniformly
-
-    # an iterative approach that is based on the distance between points (alpha), not their numbers...
-    # 1. compute pdist distance_matrix
-    # 2. find the point closest to the pipe.top, call its index current_idx
-    # 3. put current_idx in closed list
-    # 4. if the closed list is full, terminate
-    # 4. select the row of current_idx in distance_matrix
-    # 5. in that row find the index to the column that has closest distance to alpha, call it next_idx
-    # 6. find all indices to columns that has distance less than alpha, put them in the closed list
-    # 7. current_idx = next_idx, and go to step 3
-    return
-
-
-# def equidistant_points(points, distance):
-#     """
-#     Given a 2D numpy array of points, return a subsequence of the original
-#     points that are equidistant from each other, where the distance between
-#     each consecutive point is given by the input distance.
-#     """
-#     n = len(points)
-#     distances = numpy.zeros(n)
-#     distances[1:] = numpy.linalg.norm(points[1:] - points[:-1], axis=1)
-#     cumulative_distances = numpy.cumsum(distances)
-#     total_distance = cumulative_distances[-1]
-#     num_points = int(numpy.ceil(total_distance / distance))
-#     indices = numpy.arange(n)
-#     t = numpy.linspace(0, total_distance, n)
-#     equidistant_t = numpy.linspace(0, total_distance, num_points)
-#     indices_equidistant_t = numpy.searchsorted(cumulative_distances, equidistant_t)
-#     indices_equidistant_t = numpy.clip(indices_equidistant_t, 0, n-1)
-#     selected_indices = indices[indices_equidistant_t]
-#     return points[selected_indices]
-
-
-def equidistant_points(points, num_points):
-    """
-    Given a 2D numpy array of points, return a subsequence of the original
-    points that are equidistant from each other, where the number of output
-    points is given by the input num_points.
-    """
-    n = len(points)
-    distances = numpy.zeros(n)
-    distances[1:] = numpy.linalg.norm(points[1:] - points[:-1], axis=1)
-    cumulative_distances = numpy.cumsum(distances)
-    total_distance = cumulative_distances[-1]
-    indices = numpy.arange(n)
-    # equidistant_indices = numpy.linspace(0, n-1, num_points).astype(int)
-    equidistant_t = numpy.linspace(0, total_distance, num_points)
-    indices_equidistant_t = numpy.searchsorted(cumulative_distances, equidistant_t)
-    indices_equidistant_t = numpy.clip(indices_equidistant_t, 0, n-1)
-    selected_indices = indices[indices_equidistant_t]
-    return points[selected_indices]
-
-
-def equidistant_points_varying_thickness(points, num_points):
-    """
-    Given a 2D numpy array of points with varying thickness, return a subsequence
-    of the original points that are equidistant from each other, where the number
-    of output points is given by the input num_points. The thickness of the curve
-    is assumed to vary along the direction perpendicular to the curve.
-    """
-    n = len(points)
-    distances = numpy.zeros(n)
-    for i in range(1, n):
-        v1 = points[i] - points[i-1]
-        v2 = numpy.array([-v1[1], v1[0]])  # vector perpendicular to curve
-        d = numpy.abs(numpy.cross(points[i] - points[i-1], v2))  # perpendicular distance
-        distances[i] = d
-    cumulative_distances = numpy.cumsum(distances)
-    total_distance = cumulative_distances[-1]
-    indices = numpy.arange(n)
-    # equidistant_indices = numpy.linspace(0, n-1, num_points).astype(int)
-    equidistant_t = numpy.linspace(0, total_distance, num_points)
-    indices_equidistant_t = numpy.searchsorted(cumulative_distances, equidistant_t)
-    indices_equidistant_t = numpy.clip(indices_equidistant_t, 0, n-1)
-    selected_indices = indices[indices_equidistant_t]
-    return points[selected_indices]
-
-
-def _process_frame(
-    image: numpy.ndarray,
-    scene_configuration: SceneConfiguration,
-    convert_to_gray: bool,
-    resize: Optional[float] = RESIZE,
-) -> Tuple[numpy.ndarray, numpy.ndarray, numpy.ndarray]:
-    res = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY) if convert_to_gray else image.copy()
-
-    if resize is not None:
-        res = cv2.resize(res, (0,0), fx=resize, fy=resize)
-
-    if scene_configuration.is_set():
-        xmin = scene_configuration.backdrop.top_left.x
-        ymin = scene_configuration.backdrop.top_left.y
-        xmax = scene_configuration.backdrop.bottom_right.x
-        ymax = scene_configuration.backdrop.bottom_right.y
-        res = res[ymin:ymax, xmin:xmax]
-
-    return res
-
-def _find_pipe(skeleton_image: numpy.ndarray, scene_configuration: SceneConfiguration) -> numpy.ndarray:
-    num_labels, labels = cv2.connectedComponents(skeleton_image)
-    
-    # pipe_component is not necessarily the biggest, but the component closet to the pipe top and bottom
-    pipe_top_wrt_backdrop = scene_configuration.pipe_wrt_backdrop().top.as_numpy_2darray_rc()
-    pipe_bottom_wrt_backdrop = scene_configuration.pipe_wrt_backdrop().bottom.as_numpy_2darray_rc()
-    min_distance = 10e10
-    selected_label = 0
-    for label in range(1, num_labels):
-        points = _nonzero_points_as_numpy_2darray_rc(labels == label)
-        distance_matrix_to_pipe_top = cdist(pipe_top_wrt_backdrop, points)
-        distance_matrix_to_pipe_bottom = cdist(pipe_bottom_wrt_backdrop, points)
-        distance = distance_matrix_to_pipe_top.min() + distance_matrix_to_pipe_bottom.min()
-        if distance < min_distance:
-            min_distance = distance
-            selected_label = label
-
-    pipe_image = numpy.zeros(labels.shape).astype(int)
-    if selected_label != 0:
-        pipe_image[labels==selected_label] = 255
-    return pipe_image, labels
-
-##### open video
-cap = cv2.VideoCapture(video_file_path)
-
-##### select points on the image to mark regions of interests
-global scene_configuration
-scene_configuration = SceneConfiguration()
-
-def scene_configuration_callback(event, x, y, flags, params):
-    _, _ = flags, params
-    global scene_configuration
-    if event == cv2.EVENT_LBUTTONDOWN:
-        scene_configuration.set(Pixel(y=int(y), x=int(x)))
-        print(scene_configuration)
-
-# get the first frame and process it for
-ret, frame = cap.read()
-assert ret is True, "failed to read frame from video capture"
-image = _process_frame(frame, scene_configuration, convert_to_gray=False)
-cv2.imshow("scene_configuration", image)
-cv2.setMouseCallback("scene_configuration", scene_configuration_callback)
-cv2.waitKey(0)
-
-# draw scene config
-draw_scene_configuration(image, scene_configuration)
-cv2.imshow("scene_configuration", image)
-cv2.waitKey(0)
-cv2.destroyWindow("scene_configuration")
-
-assert scene_configuration.is_set(), "Cannot continue if all the points are not selected"
-
-
-##### main loop
-deviations: List[Any] = []
-play_single_frame = False
-play = True
-first_frame = True
-while(cap.isOpened()):
-
-    ###### playback control
-    pressed_key = cv2.waitKey(30) & 0xFF
-    play_single_frame = False
-    if pressed_key == ord('q'):
-        break
-    if pressed_key == ord('p'):
-        play = not play
-    if pressed_key == 83: # right arrow
-        play_single_frame = True
-    if pressed_key == 81: # left arrow
-        pass
-    if not play and not play_single_frame:
-        continue
-    
-    ##### read frame
-    ret, frame = cap.read()
-    if ret is False:
-        break
-
-    gray_resized_cropped = _process_frame(frame, scene_configuration, convert_to_gray=True)
-    equalized = equalize(gray_resized_cropped, mode=EQUALIZATION_MODE, ksize=EQUALIZATION_KERNEL_SIZE)
-    blurred = blur(equalized, mode=BLURRING_MODE, ksize=BLURRING_KERNEL_SIZE)
-    binary = binarize(
-        blurred, mode=BINARIZATION_MODE, ksize=BINARIZATION_KERNEL_SIZE, thresh=BINARIZATION_THRESHOLD
+    full_band_fraction: float = Field(
+        0.34,
+        description="Fallback band as fraction of width, only used before first valid x.",
     )
-    (
-        _,  # distance_image,
-        _,  # laplace_image,
-        _,  # skeleton_mask,
-        _,  # skeleton_image,
-        skeleton_image_eroded
-    ) = skeletonize(binary, skeleton_radius=9, erosion_size=None)
-    pipe_image, labels = _find_pipe(skeleton_image_eroded, scene_configuration)
-    pipe_points = _nonzero_points_as_numpy_2darray_rc(pipe_image)
-    # pipe_points_subsampled = equidistant_points(pipe_points, distance=100)
-    # pipe_points_subsampled = equidistant_points(pipe_points, num_points=10)
-    pipe_points_subsampled = equidistant_points_varying_thickness(pipe_points, num_points=10)
-
-    image_hieght, image_width = gray_resized_cropped.shape
-    images = {
-        "original with points": _process_frame(frame, scene_configuration, convert_to_gray=False),
-        "equalized": cv2.cvtColor(equalized, cv2.COLOR_GRAY2BGR),
-        "blurred": cv2.cvtColor(blurred, cv2.COLOR_GRAY2BGR),
-        "binary": cv2.cvtColor(binary, cv2.COLOR_GRAY2BGR),
-        "skeleton_image_eroded": cv2.cvtColor(skeleton_image_eroded, cv2.COLOR_GRAY2BGR),
-        "connected components": draw_lableled_image(labels)
-    }
-    
-    image_display = numpy.hstack([img for img in images.values()])
-    for i, text in enumerate(images.keys()):
-        location = Pixel(row=15, col=i * image_width + 1)
-        image_display = write(image_display, text, location, BLUE)
-    image_display = draw_points(image_display, pipe_points, RED)
-    for p in pipe_points_subsampled:
-        center = Pixel(row=p[0], col=p[1])
-        image_display = draw_circle(image_display, center=center, radius=3, color=GREEN, thickness=2)
-    cv2.imshow('display', image_display)
-
-    # TODO: this deviation estimate only works with vertical pipe assumption
-    #       discarding the "vertical pipe assumption" begs a proper definition of "deviation".
-    #       It can be defined in reference to the starting position, but along what exacly? horizontal or normal to pipe?
-    deviation = pipe_points[:, 1] - (scene_configuration.pipe.bottom.col - scene_configuration.backdrop.top_left.col)
-    if deviation.size > 0:
-        deviations.append(deviation)
+    init_band_px: int = Field(
+        60, description="Half-width around the clicked seed on frame 0."
+    )
+    dynamic_band_px: int = Field(
+        150, description="Half-width around last x for per-frame ROI."
+    )
+    y_pad_px: int = Field(
+        160, description="Vertical gate around seed y to exclude bottom fixture."
+    )
 
 
-cap.release()
-cv2.destroyAllWindows()
+class DetectionConfig(BaseModel):
+    """Configure blob detection and pre-processing."""
 
-if len(deviations):
-    # draw deviations
-    for frame_idx, deviation in enumerate(deviations):
-        plt.plot([frame_idx]* deviation.shape[0], deviation, "k,")
-    deviation_upper_bound = [deviation.max() for deviation in deviations]
-    deviation_lower_bound = [deviation.min() for deviation in deviations]
-    plt.plot(deviation_upper_bound, "r")
-    plt.plot(deviation_lower_bound, "r")
-    plt.xlabel("frame index")
-    plt.ylabel("horizontal deviation in pixel")
+    thr_percentile: float = Field(
+        97.0,
+        description="High percentile for adaptive threshold; lower if under-detecting.",
+    )
+    min_area: int = Field(4, description="Reject tiny specks.")
+    max_area: int = Field(900, description="Reject big blobs (e.g., fixtures).")
+    use_clahe: bool = True
+    clahe_clip_limit: float = 2.0
+    clahe_tile: int = 8
+    open_kernel: int = 3
+    dilate_kernel: int = 3
+    dilate_iter: int = 2
+
+
+class GateConfig(BaseModel):
+    """Configure temporal and spatial gates."""
+
+    init_search_radius: int = Field(80, description="Radius around seed on frame 0.")
+    track_search_radius: int = Field(90, description="Radius around last detection.")
+
+
+class DrawConfig(BaseModel):
+    """Configure visualization overlays."""
+
+    roi_color: tuple[int, int, int] = (80, 80, 80)
+    roi_thickness: int = 1
+    marker_radius: int = 6
+    marker_color: tuple[int, int, int] = (0, 255, 0)
+    marker_thickness: int = 2
+    line_color: tuple[int, int, int] = (0, 255, 0)
+    line_thickness: int = 1
+    inset_scale: int = 6  # downscale factor for dbg mask inset
+
+
+class TemplateConfig(BaseModel):
+    enabled: bool = True
+    patch_half: int = 12  # template size = 2*half+1
+    min_corr: float = 0.45  # accept match if corr >= this
+    update_alpha: float = 0.15  # EMA update of template
+    search_margin_px: int = 160  # extra margin around current ROI when matching
+
+
+class OutputConfig(BaseModel):
+    """Configure outputs and post-processing."""
+
+    baseline_frames: int = Field(
+        30, description="Frames used to compute horizontal center x0."
+    )
+
+
+class TrackerConfig(BaseModel):
+    """Bundle all tracker configs."""
+
+    roi: ROIConfig = ROIConfig()
+    det: DetectionConfig = DetectionConfig()
+    gate: GateConfig = GateConfig()
+    draw: DrawConfig = DrawConfig()
+    out: OutputConfig = OutputConfig()
+    template: TemplateConfig = TemplateConfig()
+
+
+def _extract_patch(
+    gray: np.ndarray, center_xy: Tuple[int, int], half: int
+) -> np.ndarray:
+    x, y = center_xy
+    x0 = max(0, x - half)
+    y0 = max(0, y - half)
+    x1 = min(gray.shape[1], x + half + 1)
+    y1 = min(gray.shape[0], y + half + 1)
+    patch = gray[y0:y1, x0:x1]
+    # ensure fixed size by padding if at border
+    h, w = patch.shape[:2]
+    if h != 2 * half + 1 or w != 2 * half + 1:
+        padded = np.zeros((2 * half + 1, 2 * half + 1), dtype=gray.dtype)
+        padded[:h, :w] = patch
+        patch = padded
+    return patch
+
+
+def _match_template(
+    gray: np.ndarray,
+    roi_x0: int,
+    roi_x1: int,
+    y_limits: Tuple[int, int],
+    prev_xy: Tuple[int, int],
+    template: np.ndarray,
+    cfg: TemplateConfig,
+) -> Tuple[Optional[int], Optional[int], float]:
+    # build a search window around the current ROI, expanded by margin
+    h, w = gray.shape
+    ymin, ymax = y_limits
+    sx0 = max(0, roi_x0 - cfg.search_margin_px)
+    sx1 = min(w, roi_x1 + cfg.search_margin_px)
+    sy0 = max(0, ymin)
+    sy1 = min(h, ymax)
+    search = gray[sy0:sy1, sx0:sx1]
+    if search.size == 0:
+        return None, None, -1.0
+
+    res = cv2.matchTemplate(search, template, cv2.TM_CCOEFF_NORMED)
+    minVal, maxVal, minLoc, maxLoc = cv2.minMaxLoc(res)
+    if maxVal < cfg.min_corr:
+        return None, None, maxVal
+
+    th, tw = template.shape
+    cx = sx0 + maxLoc[0] + tw // 2
+    cy = sy0 + maxLoc[1] + th // 2
+    return cx, cy, maxVal
+
+
+def detect_marker(
+    gray: np.ndarray,
+    roi_x0: int,
+    roi_x1: int,
+    cfg: TrackerConfig,
+    prev_xy: Optional[Tuple[int, int]] = None,
+    search_radius: Optional[int] = None,
+    y_limits: Optional[Tuple[int, int]] = None,
+) -> Optional[Tuple[int, int, np.ndarray]]:
+    """Detect bright marker as a compact bright blob inside [roi_x0, roi_x1)."""
+    roi = gray[:, roi_x0:roi_x1]
+
+    if cfg.det.use_clahe:
+        clahe = cv2.createCLAHE(
+            clipLimit=cfg.det.clahe_clip_limit,
+            tileGridSize=(cfg.det.clahe_tile, cfg.det.clahe_tile),
+        )
+        roi_eq = clahe.apply(roi)
+    else:
+        roi_eq = roi
+
+    thr_val = np.percentile(roi_eq, cfg.det.thr_percentile)
+    _, bw = cv2.threshold(roi_eq, max(1, int(thr_val)), 255, cv2.THRESH_BINARY)
+
+    if cfg.det.open_kernel > 1:
+        bw = cv2.morphologyEx(
+            bw,
+            cv2.MORPH_OPEN,
+            np.ones((cfg.det.open_kernel, cfg.det.open_kernel), np.uint8),
+            iterations=1,
+        )
+    if cfg.det.dilate_kernel > 1 and cfg.det.dilate_iter > 0:
+        bw = cv2.dilate(
+            bw,
+            np.ones((cfg.det.dilate_kernel, cfg.det.dilate_kernel), np.uint8),
+            iterations=cfg.det.dilate_iter,
+        )
+
+    contours, _ = cv2.findContours(bw, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    if not contours:
+        return None
+
+    best = None
+    best_score = -1e9
+    h, _ = roi.shape
+
+    for c in contours:
+        area = cv2.contourArea(c)
+        if area < cfg.det.min_area or area > cfg.det.max_area:
+            continue
+
+        m = cv2.moments(c)
+        if abs(m["m00"]) < 1e-6:
+            continue
+
+        cx = int(m["m10"] / m["m00"])
+        cy = int(m["m01"] / m["m00"])
+
+        if y_limits is not None:
+            ymin, ymax = y_limits
+            if cy < ymin or cy > ymax:
+                continue
+
+        if prev_xy is not None and search_radius is not None:
+            px, py = prev_xy
+            px_roi = px - roi_x0
+            if math.hypot(cx - px_roi, cy - py) > search_radius:
+                continue
+
+        mask = np.zeros_like(bw)
+        cv2.drawContours(mask, [c], -1, 255, -1)
+        mean_int = float(cv2.mean(roi_eq, mask=mask)[0])
+
+        score = mean_int - 0.01 * abs(cy - h / 2)
+        if prev_xy is not None and search_radius is None:
+            px, py = prev_xy
+            px_roi = px - roi_x0
+            score -= 0.2 * math.hypot(cx - px_roi, cy - py)
+
+        if score > best_score:
+            best_score = score
+            best = (cx + roi_x0, cy)
+
+    if best is None:
+        return None
+    return best[0], best[1], bw
+
+
+def make_writer(
+    path: Optional[str], fps: float, width: int, height: int
+) -> Optional[cv2.VideoWriter]:
+    """Create video writer if path is provided."""
+    if not path:
+        return None
+    fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+    return cv2.VideoWriter(path, fourcc, fps, (width, height))
+
+
+def overlay_debug(
+    frame: np.ndarray,
+    x: Optional[int],
+    y: Optional[int],
+    roi_x0: int,
+    roi_x1: int,
+    dbg_mask: Optional[np.ndarray],
+    cfg: TrackerConfig,
+) -> np.ndarray:
+    """Draw ROI, marker, and optional inset."""
+    vis = frame.copy()
+    cv2.rectangle(
+        vis,
+        (roi_x0, 0),
+        (roi_x1, frame.shape[0]),
+        cfg.draw.roi_color,
+        cfg.draw.roi_thickness,
+    )
+    if x is not None and y is not None:
+        cv2.circle(
+            vis,
+            (x, y),
+            cfg.draw.marker_radius,
+            cfg.draw.marker_color,
+            cfg.draw.marker_thickness,
+        )
+        cv2.line(
+            vis,
+            (x, 0),
+            (x, frame.shape[0]),
+            cfg.draw.line_color,
+            cfg.draw.line_thickness,
+        )
+    if dbg_mask is not None:
+        inset = cv2.resize(
+            dbg_mask,
+            (
+                frame.shape[1] // cfg.draw.inset_scale,
+                frame.shape[0] // cfg.draw.inset_scale,
+            ),
+        )
+        inset = cv2.cvtColor(inset, cv2.COLOR_GRAY2BGR)
+        h, w = inset.shape[:2]
+        vis[10 : 10 + h, 10 : 10 + w] = inset
+    return vis
+
+
+def write_csv(
+    out_csv: str, rows: List[Tuple[int, float, Optional[int], Optional[int]]], x0: float
+) -> None:
+    """Write frame, time, x, y, x_rel to CSV."""
+    with open(out_csv, "w", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(["frame", "time_sec", "x", "y", "x_rel"])
+        for fidx, t, x, y in rows:
+            x_rel = None if x is None else (float(x) - x0)
+            w.writerow(
+                [
+                    fidx,
+                    f"{t:.6f}",
+                    "" if x is None else x,
+                    "" if y is None else y,
+                    "" if x_rel is None else f"{x_rel:.3f}",
+                ]
+            )
+
+
+def plot_trace(
+    rows: List[Tuple[int, float, Optional[int], Optional[int]]], x0: float
+) -> None:
+    """Plot horizontal displacement."""
+    ts = [t for _, t, _, _ in rows]
+    xs = [np.nan if x is None else (float(x) - x0) for _, _, x, _ in rows]
+    plt.figure()
+    plt.plot(ts, xs)
+    plt.xlabel("time [s]")
+    plt.ylabel("horizontal displacement [px] (relative)")
+    plt.title("Marker horizontal displacement vs time")
+    plt.grid(True)
+    plt.savefig("oscillation.png")
     plt.show()
-else:
-    print("\nNo points were ever detected to compute deviation for\n")
+
+
+def get_manual_seed(cap: cv2.VideoCapture):
+    ok, frame0 = cap.read()
+    if not ok:
+        raise RuntimeError("Could not read first frame for manual init.")
+
+    scale = 2.5  # about 2–3x larger on screen
+    disp_w = int(frame0.shape[1] * scale)
+    disp_h = int(frame0.shape[0] * scale)
+
+    seed = {"pt": None}
+
+    def on_mouse(event, x, y, flags, param):
+        if event == cv2.EVENT_LBUTTONDOWN:
+            # map click from display space back to original frame coords
+            seed["pt"] = (int(x / scale), int(y / scale))
+
+    win = "click marker, then press space"
+    cv2.namedWindow(win, cv2.WINDOW_NORMAL)
+    cv2.resizeWindow(win, disp_w, disp_h)
+    cv2.setMouseCallback(win, on_mouse)
+
+    while True:
+        vis = cv2.resize(frame0, (disp_w, disp_h))
+        if seed["pt"] is not None:
+            cx, cy = int(seed["pt"][0] * scale), int(seed["pt"][1] * scale)
+            cv2.circle(vis, (cx, cy), 10, (0, 255, 0), 2)
+        cv2.putText(
+            vis,
+            "Left-click near marker; space=confirm, r=reset, q=quit",
+            (20, 40),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            1.0,
+            (0, 255, 0),
+            2,
+        )
+        cv2.imshow(win, vis)
+        k = cv2.waitKey(30) & 0xFF
+        if k in (13, 32):  # enter or space
+            if seed["pt"] is not None:
+                break
+        elif k in (ord("r"), ord("R")):
+            seed["pt"] = None
+        elif k in (27, ord("q"), ord("Q")):
+            raise SystemExit("User aborted manual init.")
+
+    cv2.destroyWindow(win)
+    cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+    return frame0, seed["pt"]
+
+
+def track_video(
+    video_path: str,
+    out_csv: str,
+    debug_video: Optional[str],
+    show_plot: bool,
+    cfg: TrackerConfig,
+) -> None:
+    """Track marker with manual seed, dynamic ROI, and gated search."""
+    cap = cv2.VideoCapture(video_path)
+    if not cap.isOpened():
+        raise RuntimeError(f"Could not open video: {video_path}")
+
+    fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
+    width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+
+    # Manual seed (bigger window already implemented in your get_manual_seed)
+    _, seed_xy = get_manual_seed(cap)
+
+    # Persistent vertical gate around seed to avoid the bottom fixture
+    y_gate = (
+        max(0, seed_xy[1] - cfg.roi.y_pad_px),
+        min(height - 1, seed_xy[1] + cfg.roi.y_pad_px),
+    )
+
+    # Initial horizontal band around the click
+    roi_x0 = max(0, seed_xy[0] - cfg.roi.init_band_px)
+    roi_x1 = min(width, seed_xy[0] + cfg.roi.init_band_px)
+
+    writer = make_writer(debug_video, fps, width, height)
+
+    rows: List[Tuple[int, float, Optional[int], Optional[int]]] = []
+    xs_for_baseline: List[int] = []
+
+    prev_xy: Optional[Tuple[int, int]] = seed_xy
+    frame_idx = 0
+
+    # Build initial template from the seed
+    tpl_half = cfg.template.patch_half
+    # get first frame again to build template on the same view we track
+    cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+    ok, first_frame = cap.read()
+    if not ok:
+        raise RuntimeError("Failed to read first frame to build template.")
+    first_gray = cv2.cvtColor(first_frame, cv2.COLOR_BGR2GRAY)
+    template = _extract_patch(first_gray, seed_xy, tpl_half)
+
+    while True:
+        ok, frame = cap.read()
+        if not ok:
+            break
+
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+
+        x, y, dbg_mask = None, None, None
+
+        # 1) Try template tracking first
+        tx, ty, corr = (None, None, -1.0)
+        if cfg.template.enabled and prev_xy is not None:
+            tx, ty, corr = _match_template(
+                gray, roi_x0, roi_x1, y_gate, prev_xy, template, cfg.template
+            )
+
+        if tx is not None and ty is not None:
+            x, y = tx, ty
+        else:
+            # 2) Fallback to blob detection inside current ROI
+            search_r = (
+                cfg.gate.init_search_radius
+                if frame_idx == 0
+                else cfg.gate.track_search_radius
+            )
+            det = detect_marker(
+                gray,
+                roi_x0,
+                roi_x1,
+                cfg,
+                prev_xy=prev_xy,
+                search_radius=search_r,
+                y_limits=y_gate,
+            )
+            if det is not None:
+                x, y, dbg_mask = det
+
+        # 3) If we have a position, update state and refresh template a little
+        if x is not None and y is not None:
+            prev_xy = (x, y)
+            if len(xs_for_baseline) < cfg.out.baseline_frames:
+                xs_for_baseline.append(x)
+            if cfg.template.enabled:
+                new_patch = _extract_patch(gray, (x, y), tpl_half).astype(np.float32)
+                old = template.astype(np.float32)
+                template = (
+                    (1.0 - cfg.template.update_alpha) * old
+                    + cfg.template.update_alpha * new_patch
+                ).astype(template.dtype)
+
+        # Update the ROI horizontally around the most recent x (or keep last)
+        if prev_xy is not None:
+            cx = prev_xy[0]
+            roi_x0 = max(0, cx - cfg.roi.dynamic_band_px)
+            roi_x1 = min(width, cx + cfg.roi.dynamic_band_px)
+        else:
+            # Fallback to a centered band until we recover
+            band_half = int(cfg.roi.full_band_fraction * width / 2.0)
+            roi_x0 = max(0, width // 2 - band_half)
+            roi_x1 = min(width, width // 2 + band_half)
+
+        t = frame_idx / fps
+        rows.append((frame_idx, t, x, y))
+
+        if writer is not None:
+            writer.write(overlay_debug(frame, x, y, roi_x0, roi_x1, dbg_mask, cfg))
+
+        frame_idx += 1
+
+    cap.release()
+    if writer is not None:
+        writer.release()
+
+    x0 = (
+        float(np.median(xs_for_baseline))
+        if xs_for_baseline
+        else (roi_x0 + roi_x1) / 2.0
+    )
+    write_csv(out_csv, rows, x0)
+
+    if show_plot:
+        plot_trace(rows, x0)
+
+
+def main() -> None:
+    p = argparse.ArgumentParser(
+        description="Track bright mid-marker with manual initialization."
+    )
+    p.add_argument("video", help="Path to input video")
+    p.add_argument("--out-csv", default="marker_trace.csv", help="Output CSV path")
+    p.add_argument("--debug-video", default=None, help="Optional MP4 with overlay")
+    p.add_argument("--plot", action="store_true", help="Show a quick matplotlib plot")
+    args = p.parse_args()
+
+    cfg = TrackerConfig()  # defaults tuned for your footage
+    track_video(
+        args.video,
+        out_csv=args.out_csv,
+        debug_video=args.debug_video,
+        show_plot=args.plot,
+        cfg=cfg,
+    )
+
+
+if __name__ == "__main__":
+    main()
