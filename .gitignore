@@ -11,3 +11,7 @@ htmlcov/
 .coverage
 coverage.xml
 profile.out
+
+*.MOV
+*.mp4
+*.png
