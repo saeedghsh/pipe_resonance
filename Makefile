@@ -29,3 +29,30 @@ pin-env:
 outdated-env:
 	@echo "\n=== Checking for outdated packages in conda virtual environment ==="
 	mamba update --all --dry-run
+
+########################################
+########################### CODE QUALITY
+########################################
+
+.PHONY: formatter
+formatter:
+	@echo "\n=== Checking code formatting ==="
+	@black --check .
+
+.PHONY: linter
+linter:
+	@echo "\n=== Linting Python files (all) ==="
+	@pylint $(shell git ls-files '*.py')
+
+MYPY_OPTS = --install-types --non-interactive --explicit-package-bases --config-file=pyproject.toml --show-error-codes
+
+.PHONY: type-check
+type-check:
+	@echo "\n=== Running type checks (all) ==="
+	@mypy $(MYPY_OPTS) .
+
+.PHONY: code-quality
+code-quality:
+	-@$(MAKE) formatter
+	-@$(MAKE) type-check
+	-@$(MAKE) linter
