@@ -11,9 +11,9 @@ dependencies:
   - black
   - mypy
   # science stack
+  - pydantic
   - opencv
   - numpy
   - matplotlib
-  - pydantic
   # pip
   - pip
