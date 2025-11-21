@@ -1,10 +1,19 @@
 name: pipe_resonance
+
 channels:
   - conda-forge
+
 dependencies:
+  # core interpreter
   - python=3.11
+  # dev & code-quality
+  - pylint
+  - black
+  - mypy
+  # science stack
   - opencv
   - numpy
   - matplotlib
   - pydantic
+  # pip
   - pip
