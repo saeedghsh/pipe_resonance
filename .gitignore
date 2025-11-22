@@ -15,3 +15,5 @@ profile.out
 *.MOV
 *.mp4
 *.png
+
+data/*

@@ -13,10 +13,10 @@ conda activate pipe_resonance # activate environment
 Usage
 
 ```bash
-python main.py "air_set/WhatsApp Video 2025-04-19 at 20.04.04.mp4"
-python main.py "air_set/WhatsApp Video 2025-04-19 at 20.06.10.mp4"
-python main.py "air_set/IMG_3128.MOV"
-python main.py "air_set/IMG_3129.MOV"
+python main.py "data/air_set/WhatsApp Video 2025-04-19 at 20.04.04.mp4"
+python main.py "data/air_set/WhatsApp Video 2025-04-19 at 20.06.10.mp4"
+python main.py "data/air_set/IMG_3128.MOV"
+python main.py "data/air_set/IMG_3129.MOV"
 ```
 
 Convert output video to whatsapp compatible
