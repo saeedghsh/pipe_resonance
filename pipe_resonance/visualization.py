@@ -1,6 +1,8 @@
 """Utilities for plotting and image overlaying"""
 
 # pylint: disable=no-member
+from pathlib import Path
+
 import cv2
 import matplotlib.pyplot as plt
 import numpy as np
@@ -55,7 +57,9 @@ def overlay_debug(
     return vis
 
 
-def plot_trace(rows: list[tuple[int, float, int | None, int | None]], x0: float) -> None:
+def plot_trace(
+    rows: list[tuple[int, float, int | None, int | None]], x0: float, plot_path: Path
+) -> None:
     """Plot horizontal displacement."""
     ts = [t for _, t, _, _ in rows]
     xs = [np.nan if x is None else (float(x) - x0) for _, _, x, _ in rows]
@@ -65,5 +69,5 @@ def plot_trace(rows: list[tuple[int, float, int | None, int | None]], x0: float)
     plt.ylabel("horizontal displacement [px] (relative)")
     plt.title("Marker horizontal displacement vs time")
     plt.grid(True)
-    plt.savefig("oscillation.png")
+    plt.savefig(plot_path)
     plt.show()

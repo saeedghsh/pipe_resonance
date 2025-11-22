@@ -3,6 +3,7 @@
 # pylint: disable=no-member
 import csv
 import math
+from pathlib import Path
 from typing import Any
 
 import cv2
@@ -203,10 +204,10 @@ def _get_manual_seed(cap: cv2.VideoCapture) -> tuple[int, int]:
 
 
 def _write_csv(
-    out_csv: str, rows: list[tuple[int, float, int | None, int | None]], x0: float
+    csv_path: Path, rows: list[tuple[int, float, int | None, int | None]], x0: float
 ) -> None:
     """Write frame, time, x, y, x_rel to CSV."""
-    with open(out_csv, "w", newline="", encoding="utf-8") as f:
+    with open(csv_path, "w", newline="", encoding="utf-8") as f:
         w = csv.writer(f)
         w.writerow(["frame", "time_sec", "x", "y", "x_rel"])
         for f_idx, t, x, y in rows:
@@ -231,10 +232,10 @@ def _make_writer(path: str | None, fps: float, width: int, height: int) -> cv2.V
 
 
 def track_video(
-    video_path: str, out_csv: str, debug_video: str | None, show_plot: bool, cfg: TrackerConfig
+    *, video_path: Path, csv_path: Path, debug_video_path: Path, plot_path: Path, cfg: TrackerConfig
 ) -> None:
     """Track marker with manual seed, dynamic ROI, and gated search."""
-    cap = cv2.VideoCapture(video_path)
+    cap = cv2.VideoCapture(str(video_path))
     if not cap.isOpened():
         raise RuntimeError(f"Could not open video: {video_path}")
 
@@ -255,7 +256,7 @@ def track_video(
     roi_x0 = max(0, seed_xy[0] - cfg.roi.init_band_px)
     roi_x1 = min(width, seed_xy[0] + cfg.roi.init_band_px)
 
-    writer = _make_writer(debug_video, fps, width, height)
+    writer = _make_writer(str(debug_video_path), fps, width, height)
 
     rows: list[tuple[int, float, int | None, int | None]] = []
     xs_for_baseline: list[int] = []
@@ -344,7 +345,5 @@ def track_video(
         writer.release()
 
     x0 = float(np.median(xs_for_baseline)) if xs_for_baseline else (roi_x0 + roi_x1) / 2.0
-    _write_csv(out_csv, rows, x0)
-
-    if show_plot:
-        plot_trace(rows, x0)
+    _write_csv(csv_path, rows, x0)
+    plot_trace(rows, x0, plot_path)
