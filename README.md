@@ -24,3 +24,8 @@ Convert output video to whatsapp compatible
 ```bash
 ffmpeg -i <in_video>.mp4 -vcodec libx264 -pix_fmt yuv420p -preset veryfast -crf 23 -movflags +faststart <out_video>.mp4
 ```
+
+## Laundry list
+- [ ] How to run it in windows
+- [ ] make `video` arg optional, and if `None` add a "open file" dialog
+- [ ] overlay the vertical gate
