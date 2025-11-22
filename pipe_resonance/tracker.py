@@ -4,12 +4,12 @@
 import csv
 import math
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import cv2
 import numpy as np
 
-from .configs import TemplateConfig, TrackerConfig
+from .configs import DetectionConfig, TemplateConfig, TrackerConfig
 from .visualization import overlay_debug, plot_trace
 
 
@@ -60,92 +60,146 @@ def _match_template(
     return cx, cy
 
 
-def detect_marker(
-    gray: np.ndarray,
+def _contour_center(contour: np.ndarray) -> tuple[int, int] | None:
+    moments = cv2.moments(contour)
+    if abs(moments["m00"]) < 1e-6:
+        return None
+    cx = int(moments["m10"] / moments["m00"])
+    cy = int(moments["m01"] / moments["m00"])
+    return (cx, cy)
+
+
+def _contour_center_with_score(
+    *,
+    contour: np.ndarray,
+    image_roi: np.ndarray,
+    image_roi_bw: np.ndarray,
+    roi_x0: int,
+    prev_xy: tuple[int, int] | None = None,
+    search_radius: int | None = None,
+) -> tuple[tuple[int, int] | None, float | None]:
+    center = _contour_center(contour)
+    if center is None:
+        return None, None
+    height, _ = image_roi_bw.shape
+    mask = np.zeros_like(image_roi_bw)
+    cv2.drawContours(mask, [contour], -1, 255, -1)
+    mean_int = float(cv2.mean(image_roi, mask=mask)[0])  # type: ignore[index]
+    score = mean_int - 0.01 * abs(center[1] - height / 2)
+    if prev_xy is not None and search_radius is None:
+        px, py = prev_xy
+        px_roi = px - roi_x0
+        score -= 0.2 * math.hypot(center[0] - px_roi, center[1] - py)
+    return center, cast(float, score)
+
+
+def _violates_radius(
+    center: tuple[int, int],
+    roi_x0: int,
+    *,
+    prev_xy: tuple[int, int] | None = None,
+    search_radius: int | None = None,
+) -> bool:
+    if prev_xy is not None and search_radius is not None:
+        px, py = prev_xy
+        px_roi = px - roi_x0
+        if math.hypot(center[0] - px_roi, center[1] - py) > search_radius:
+            return True
+    return False
+
+
+def _best_contour_center(
+    *,
+    image_roi: np.ndarray,
+    image_roi_bw: np.ndarray,
+    detection_config: DetectionConfig,
+    roi_x0: int,
+    prev_xy: tuple[int, int] | None = None,
+    search_radius: int | None = None,
+    y_limits: tuple[int, int] | None = None,
+) -> tuple[int, int] | None:
+
+    contours, _ = cv2.findContours(image_roi_bw, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    if not contours:
+        return None
+
+    best_score: float = -1e9
+    best = None
+    for contour in contours:
+        area = cv2.contourArea(contour)
+        if area < detection_config.min_area or area > detection_config.max_area:
+            continue
+
+        center, score = _contour_center_with_score(
+            contour=contour,
+            image_roi=image_roi,
+            image_roi_bw=image_roi_bw,
+            roi_x0=roi_x0,
+            prev_xy=prev_xy,
+            search_radius=search_radius,
+        )
+
+        if center is None or score is None:
+            continue
+        if y_limits is not None and not (center[1] < y_limits[0] or center[1] > y_limits[1]):
+            continue
+        if _violates_radius(center, roi_x0, prev_xy=prev_xy, search_radius=search_radius):
+            continue
+
+        if score > best_score:
+            best_score = score
+            best = (center[0] + roi_x0, center[1])
+    return best
+
+
+def _enhance_contrast(image: np.ndarray, detection_config: DetectionConfig) -> np.ndarray:
+    clip_limit = detection_config.clahe_clip_limit
+    tile_size = detection_config.clahe_tile
+    clahe = cv2.createCLAHE(clipLimit=clip_limit, tileGridSize=(tile_size, tile_size))
+    return clahe.apply(image)
+
+
+def _black_and_white(image: np.ndarray, detection_config: DetectionConfig) -> np.ndarray:
+    thr_val = np.percentile(image, detection_config.thr_percentile)
+    _, image_bw = cv2.threshold(image, max(1, int(thr_val)), 255, cv2.THRESH_BINARY)
+    if detection_config.open_kernel > 1:
+        kernel = np.ones((detection_config.open_kernel, detection_config.open_kernel), np.uint8)
+        image_bw = cv2.morphologyEx(image_bw, cv2.MORPH_OPEN, kernel, iterations=1)
+    if detection_config.dilate_kernel > 1 and detection_config.dilate_iter > 0:
+        kernel = np.ones((detection_config.dilate_kernel, detection_config.dilate_kernel), np.uint8)
+        image_bw = cv2.dilate(image_bw, kernel, iterations=detection_config.dilate_iter)
+    return image_bw
+
+
+def _detect_marker(
+    *,
+    image_gray: np.ndarray,
     roi_x0: int,
     roi_x1: int,
-    cfg: TrackerConfig,
+    detection_config: DetectionConfig,
     prev_xy: tuple[int, int] | None = None,
     search_radius: int | None = None,
     y_limits: tuple[int, int] | None = None,
 ) -> tuple[int, int, np.ndarray] | None:
     """Detect bright marker as a compact bright blob inside [roi_x0, roi_x1)."""
-    roi = gray[:, roi_x0:roi_x1]
+    image_roi = image_gray[:, roi_x0:roi_x1]
+    if detection_config.use_clahe:
+        image_roi = _enhance_contrast(image_roi, detection_config)
+    image_roi_bw = _black_and_white(image_roi, detection_config)
 
-    if cfg.det.use_clahe:
-        clahe = cv2.createCLAHE(
-            clipLimit=cfg.det.clahe_clip_limit,
-            tileGridSize=(cfg.det.clahe_tile, cfg.det.clahe_tile),
-        )
-        roi_eq = clahe.apply(roi)
-    else:
-        roi_eq = roi
+    contour_center = _best_contour_center(
+        image_roi_bw=image_roi_bw,
+        image_roi=image_roi,
+        detection_config=detection_config,
+        roi_x0=roi_x0,
+        prev_xy=prev_xy,
+        search_radius=search_radius,
+        y_limits=y_limits,
+    )
 
-    thr_val = np.percentile(roi_eq, cfg.det.thr_percentile)
-    _, bw = cv2.threshold(roi_eq, max(1, int(thr_val)), 255, cv2.THRESH_BINARY)
-
-    if cfg.det.open_kernel > 1:
-        bw = cv2.morphologyEx(
-            bw,
-            cv2.MORPH_OPEN,
-            np.ones((cfg.det.open_kernel, cfg.det.open_kernel), np.uint8),
-            iterations=1,
-        )
-    if cfg.det.dilate_kernel > 1 and cfg.det.dilate_iter > 0:
-        bw = cv2.dilate(
-            bw,
-            np.ones((cfg.det.dilate_kernel, cfg.det.dilate_kernel), np.uint8),
-            iterations=cfg.det.dilate_iter,
-        )
-
-    contours, _ = cv2.findContours(bw, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    if not contours:
+    if contour_center is None:
         return None
-
-    best = None
-    best_score = -1e9
-    h, _ = roi.shape
-
-    for c in contours:
-        area = cv2.contourArea(c)
-        if area < cfg.det.min_area or area > cfg.det.max_area:
-            continue
-
-        m = cv2.moments(c)
-        if abs(m["m00"]) < 1e-6:
-            continue
-
-        cx = int(m["m10"] / m["m00"])
-        cy = int(m["m01"] / m["m00"])
-
-        if y_limits is not None:
-            ymin, ymax = y_limits
-            if cy < ymin or cy > ymax:
-                continue
-
-        if prev_xy is not None and search_radius is not None:
-            px, py = prev_xy
-            px_roi = px - roi_x0
-            if math.hypot(cx - px_roi, cy - py) > search_radius:
-                continue
-
-        mask = np.zeros_like(bw)
-        cv2.drawContours(mask, [c], -1, 255, -1)
-        mean_int = float(cv2.mean(roi_eq, mask=mask)[0])  # type: ignore[index]
-
-        score = mean_int - 0.01 * abs(cy - h / 2)
-        if prev_xy is not None and search_radius is None:
-            px, py = prev_xy
-            px_roi = px - roi_x0
-            score -= 0.2 * math.hypot(cx - px_roi, cy - py)
-
-        if score > best_score:
-            best_score = score
-            best = (cx + roi_x0, cy)
-
-    if best is None:
-        return None
-    return best[0], best[1], bw
+    return contour_center[0], contour_center[1], image_roi_bw
 
 
 def _get_manual_seed(cap: cv2.VideoCapture) -> tuple[int, int]:
@@ -302,11 +356,11 @@ def track_video(
             search_r = (
                 cfg.gate.init_search_radius if not frame_idx else cfg.gate.track_search_radius
             )
-            det = detect_marker(
-                gray,
-                roi_x0,
-                roi_x1,
-                cfg,
+            det = _detect_marker(
+                image_gray=gray,
+                roi_x0=roi_x0,
+                roi_x1=roi_x1,
+                detection_config=cfg.det,
                 prev_xy=prev_xy,
                 search_radius=search_r,
                 y_limits=y_gate,
