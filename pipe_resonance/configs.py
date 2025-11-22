@@ -53,6 +53,8 @@ class DrawConfig(BaseModel):
 
 
 class TemplateConfig(BaseModel):
+    """Configure Template for template matching"""
+
     enabled: bool = True
     patch_half: int = 12  # template size = 2*half+1
     min_corr: float = 0.45  # accept match if corr >= this
@@ -69,9 +71,9 @@ class OutputConfig(BaseModel):
 class TrackerConfig(BaseModel):
     """Bundle all tracker configs."""
 
-    roi: ROIConfig = ROIConfig()
-    det: DetectionConfig = DetectionConfig()
-    gate: GateConfig = GateConfig()
-    out: OutputConfig = OutputConfig()
-    draw: DrawConfig = DrawConfig()
-    template: TemplateConfig = TemplateConfig()
+    roi: ROIConfig = Field(default_factory=ROIConfig)
+    det: DetectionConfig = Field(default_factory=DetectionConfig)
+    gate: GateConfig = Field(default_factory=GateConfig)
+    out: OutputConfig = Field(default_factory=OutputConfig)
+    draw: DrawConfig = Field(default_factory=DrawConfig)
+    template: TemplateConfig = Field(default_factory=TemplateConfig)

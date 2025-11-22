@@ -61,3 +61,4 @@ disable_error_code = [
     "type-arg", # Missing type parameters for generic type 'ndarray'
 ]
 show_error_codes = true
+plugins = ["pydantic.mypy"]
