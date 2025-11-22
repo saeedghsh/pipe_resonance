@@ -32,8 +32,7 @@ def _extract_patch(gray: np.ndarray, center_xy: tuple[int, int], half: int) -> n
 def _match_template(
     *,
     image_gray: np.ndarray,
-    roi_x0: int,
-    roi_x1: int,
+    roi_x_range: tuple[int, int],
     y_limits: tuple[int, int],
     template: np.ndarray,
     template_config: TemplateConfig,
@@ -41,8 +40,8 @@ def _match_template(
     # build a search window around the current ROI, expanded by margin
     h, w = image_gray.shape
     ymin, ymax = y_limits
-    sx0 = max(0, roi_x0 - template_config.search_margin_px)
-    sx1 = min(w, roi_x1 + template_config.search_margin_px)
+    sx0 = max(0, roi_x_range[0] - template_config.search_margin_px)
+    sx1 = min(w, roi_x_range[1] + template_config.search_margin_px)
     sy0 = max(0, ymin)
     sy1 = min(h, ymax)
     search = image_gray[sy0:sy1, sx0:sx1]
@@ -74,7 +73,7 @@ def _contour_center_with_score(
     contour: np.ndarray,
     image_roi: np.ndarray,
     image_roi_bw: np.ndarray,
-    roi_x0: int,
+    roi_x_range: tuple[int, int],
     prev_xy: tuple[int, int] | None = None,
     search_radius: int | None = None,
 ) -> tuple[tuple[int, int] | None, float | None]:
@@ -88,21 +87,21 @@ def _contour_center_with_score(
     score = mean_int - 0.01 * abs(center[1] - height / 2)
     if prev_xy is not None and search_radius is None:
         px, py = prev_xy
-        px_roi = px - roi_x0
+        px_roi = px - roi_x_range[0]
         score -= 0.2 * math.hypot(center[0] - px_roi, center[1] - py)
     return center, cast(float, score)
 
 
 def _violates_radius(
-    center: tuple[int, int],
-    roi_x0: int,
     *,
+    center: tuple[int, int],
+    roi_x_range: tuple[int, int],
     prev_xy: tuple[int, int] | None = None,
     search_radius: int | None = None,
 ) -> bool:
     if prev_xy is not None and search_radius is not None:
         px, py = prev_xy
-        px_roi = px - roi_x0
+        px_roi = px - roi_x_range[0]
         if math.hypot(center[0] - px_roi, center[1] - py) > search_radius:
             return True
     return False
@@ -113,7 +112,7 @@ def _best_contour_center(
     image_roi: np.ndarray,
     image_roi_bw: np.ndarray,
     detection_config: DetectionConfig,
-    roi_x0: int,
+    roi_x_range: tuple[int, int],
     prev_xy: tuple[int, int] | None = None,
     search_radius: int | None = None,
     y_limits: tuple[int, int] | None = None,
@@ -134,7 +133,7 @@ def _best_contour_center(
             contour=contour,
             image_roi=image_roi,
             image_roi_bw=image_roi_bw,
-            roi_x0=roi_x0,
+            roi_x_range=roi_x_range,
             prev_xy=prev_xy,
             search_radius=search_radius,
         )
@@ -143,12 +142,14 @@ def _best_contour_center(
             continue
         if y_limits is not None and not (center[1] < y_limits[0] or center[1] > y_limits[1]):
             continue
-        if _violates_radius(center, roi_x0, prev_xy=prev_xy, search_radius=search_radius):
+        if _violates_radius(
+            center=center, roi_x_range=roi_x_range, prev_xy=prev_xy, search_radius=search_radius
+        ):
             continue
 
         if score > best_score:
             best_score = score
-            best = (center[0] + roi_x0, center[1])
+            best = (center[0] + roi_x_range[0], center[1])
     return best
 
 
@@ -174,15 +175,14 @@ def _black_and_white(image: np.ndarray, detection_config: DetectionConfig) -> np
 def _detect_marker(
     *,
     image_gray: np.ndarray,
-    roi_x0: int,
-    roi_x1: int,
+    roi_x_range: tuple[int, int],
     detection_config: DetectionConfig,
     prev_xy: tuple[int, int] | None = None,
     search_radius: int | None = None,
     y_limits: tuple[int, int] | None = None,
 ) -> tuple[int, int, np.ndarray] | None:
     """Detect bright marker as a compact bright blob inside [roi_x0, roi_x1)."""
-    image_roi = image_gray[:, roi_x0:roi_x1]
+    image_roi = image_gray[:, roi_x_range[0] : roi_x_range[1]]
     if detection_config.use_clahe:
         image_roi = _enhance_contrast(image_roi, detection_config)
     image_roi_bw = _black_and_white(image_roi, detection_config)
@@ -191,7 +191,7 @@ def _detect_marker(
         image_roi_bw=image_roi_bw,
         image_roi=image_roi,
         detection_config=detection_config,
-        roi_x0=roi_x0,
+        roi_x_range=roi_x_range,
         prev_xy=prev_xy,
         search_radius=search_radius,
         y_limits=y_limits,
@@ -307,9 +307,10 @@ def track_video(
     )
 
     # Initial horizontal band around the click
-    roi_x0 = max(0, seed_xy[0] - cfg.roi.init_band_px)
-    roi_x1 = min(width, seed_xy[0] + cfg.roi.init_band_px)
-
+    roi_x_range = (
+        max(0, seed_xy[0] - cfg.roi.init_band_px),
+        min(width, seed_xy[0] + cfg.roi.init_band_px),
+    )
     writer = _make_writer(str(debug_video_path), fps, width, height)
 
     rows: list[tuple[int, float, int | None, int | None]] = []
@@ -342,8 +343,7 @@ def track_video(
         if cfg.template.enabled and prev_xy is not None:
             tx, ty = _match_template(
                 image_gray=gray,
-                roi_x0=roi_x0,
-                roi_x1=roi_x1,
+                roi_x_range=roi_x_range,
                 y_limits=y_gate,
                 template=template,
                 template_config=cfg.template,
@@ -358,8 +358,7 @@ def track_video(
             )
             det = _detect_marker(
                 image_gray=gray,
-                roi_x0=roi_x0,
-                roi_x1=roi_x1,
+                roi_x_range=roi_x_range,
                 detection_config=cfg.det,
                 prev_xy=prev_xy,
                 search_radius=search_r,
@@ -383,19 +382,31 @@ def track_video(
         # Update the ROI horizontally around the most recent x (or keep last)
         if prev_xy is not None:
             cx = prev_xy[0]
-            roi_x0 = max(0, cx - cfg.roi.dynamic_band_px)
-            roi_x1 = min(width, cx + cfg.roi.dynamic_band_px)
+            roi_x_range = (
+                max(0, cx - cfg.roi.dynamic_band_px),
+                min(width, cx + cfg.roi.dynamic_band_px),
+            )
         else:
             # Fallback to a centered band until we recover
             band_half = int(cfg.roi.full_band_fraction * width / 2.0)
-            roi_x0 = max(0, width // 2 - band_half)
-            roi_x1 = min(width, width // 2 + band_half)
+            roi_x_range = (
+                max(0, width // 2 - band_half),
+                min(width, width // 2 + band_half),
+            )
 
         t = frame_idx / fps
         rows.append((frame_idx, t, x, y))
 
         if writer is not None:
-            writer.write(overlay_debug(frame, x, y, roi_x0, roi_x1, dbg_mask, cfg))
+            writer.write(
+                overlay_debug(
+                    frame=frame,
+                    marker=(x, y),
+                    roi_x_range=roi_x_range,
+                    dbg_mask=dbg_mask,
+                    draw_config=cfg.draw,
+                )
+            )
 
         frame_idx += 1
 
@@ -403,6 +414,10 @@ def track_video(
     if writer is not None:
         writer.release()
 
-    x0 = float(np.median(xs_for_baseline)) if xs_for_baseline else (roi_x0 + roi_x1) / 2.0
+    x0 = (
+        float(np.median(xs_for_baseline))
+        if xs_for_baseline
+        else (roi_x_range[0] + roi_x_range[1]) / 2.0
+    )
     _write_csv(csv_path, rows, x0)
     plot_trace(rows, x0, plot_path)

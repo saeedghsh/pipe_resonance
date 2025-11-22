@@ -7,48 +7,48 @@ import cv2
 import matplotlib.pyplot as plt
 import numpy as np
 
-from .configs import TrackerConfig
+from .configs import DrawConfig
 
 
 def overlay_debug(
+    *,
     frame: np.ndarray,
-    x: int | None,
-    y: int | None,
-    roi_x0: int,
-    roi_x1: int,
+    marker: tuple[int | None, int | None],
+    roi_x_range: tuple[int, int],
     dbg_mask: np.ndarray | None,
-    cfg: TrackerConfig,
+    draw_config: DrawConfig,
 ) -> np.ndarray:
     """Draw ROI, marker, and optional inset."""
     vis = frame.copy()
     cv2.rectangle(
         vis,
-        (roi_x0, 0),
-        (roi_x1, frame.shape[0]),
-        cfg.draw.roi_color,
-        cfg.draw.roi_thickness,
+        (roi_x_range[0], 0),
+        (roi_x_range[1], frame.shape[0]),
+        draw_config.roi_color,
+        draw_config.roi_thickness,
     )
-    if x is not None and y is not None:
+
+    if marker[0] is not None and marker[1] is not None:
         cv2.circle(
             vis,
-            (x, y),
-            cfg.draw.marker_radius,
-            cfg.draw.marker_color,
-            cfg.draw.marker_thickness,
+            (marker[0], marker[1]),
+            draw_config.marker_radius,
+            draw_config.marker_color,
+            draw_config.marker_thickness,
         )
         cv2.line(
             vis,
-            (x, 0),
-            (x, frame.shape[0]),
-            cfg.draw.line_color,
-            cfg.draw.line_thickness,
+            (marker[0], 0),
+            (marker[0], frame.shape[0]),
+            draw_config.line_color,
+            draw_config.line_thickness,
         )
     if dbg_mask is not None:
         inset = cv2.resize(
             dbg_mask,
             (
-                frame.shape[1] // cfg.draw.inset_scale,
-                frame.shape[0] // cfg.draw.inset_scale,
+                frame.shape[1] // draw_config.inset_scale,
+                frame.shape[0] // draw_config.inset_scale,
             ),
         )
         inset = cv2.cvtColor(inset, cv2.COLOR_GRAY2BGR)
