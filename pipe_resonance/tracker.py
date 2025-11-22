@@ -30,34 +30,34 @@ def _extract_patch(gray: np.ndarray, center_xy: tuple[int, int], half: int) -> n
 
 
 def _match_template(
-    gray: np.ndarray,
+    *,
+    image_gray: np.ndarray,
     roi_x0: int,
     roi_x1: int,
     y_limits: tuple[int, int],
-    __prev_xy: tuple[int, int],
     template: np.ndarray,
-    cfg: TemplateConfig,
-) -> tuple[int | None, int | None, float]:
+    template_config: TemplateConfig,
+) -> tuple[int | None, int | None]:
     # build a search window around the current ROI, expanded by margin
-    h, w = gray.shape
+    h, w = image_gray.shape
     ymin, ymax = y_limits
-    sx0 = max(0, roi_x0 - cfg.search_margin_px)
-    sx1 = min(w, roi_x1 + cfg.search_margin_px)
+    sx0 = max(0, roi_x0 - template_config.search_margin_px)
+    sx1 = min(w, roi_x1 + template_config.search_margin_px)
     sy0 = max(0, ymin)
     sy1 = min(h, ymax)
-    search = gray[sy0:sy1, sx0:sx1]
+    search = image_gray[sy0:sy1, sx0:sx1]
     if not search.size:
-        return None, None, -1.0
+        return None, None
 
     res = cv2.matchTemplate(search, template, cv2.TM_CCOEFF_NORMED)
     __min_val, max_val, __min_loc, max_loc = cv2.minMaxLoc(res)
-    if max_val < cfg.min_corr:
-        return None, None, max_val
+    if max_val < template_config.min_corr:
+        return None, None
 
     th, tw = template.shape
     cx = sx0 + max_loc[0] + tw // 2
     cy = sy0 + max_loc[1] + th // 2
-    return cx, cy, max_val
+    return cx, cy
 
 
 def detect_marker(
@@ -284,10 +284,15 @@ def track_video(
         x, y, dbg_mask = None, None, None
 
         # 1) Try template tracking first
-        tx, ty, __corr = (None, None, -1.0)
+        tx, ty = (None, None)
         if cfg.template.enabled and prev_xy is not None:
-            tx, ty, __corr = _match_template(
-                gray, roi_x0, roi_x1, y_gate, prev_xy, template, cfg.template
+            tx, ty = _match_template(
+                image_gray=gray,
+                roi_x0=roi_x0,
+                roi_x1=roi_x1,
+                y_limits=y_gate,
+                template=template,
+                template_config=cfg.template,
             )
 
         if tx is not None and ty is not None:
