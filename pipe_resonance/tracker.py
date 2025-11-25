@@ -29,7 +29,7 @@ def _extract_patch(gray: np.ndarray, center_xy: tuple[int, int], half: int) -> n
     return patch
 
 
-def _match_template(
+def _match_template(  # pylint: disable=too-many-locals
     *,
     image_gray: np.ndarray,
     roi_x_range: tuple[int, int],
@@ -68,7 +68,7 @@ def _contour_center(contour: np.ndarray) -> tuple[int, int] | None:
     return (cx, cy)
 
 
-def _contour_center_with_score(
+def _contour_center_with_score(  # pylint: disable=too-many-arguments
     *,
     contour: np.ndarray,
     image_roi: np.ndarray,
@@ -107,7 +107,7 @@ def _violates_radius(
     return False
 
 
-def _best_contour_center(
+def _best_contour_center(  # pylint: disable=too-many-arguments
     *,
     image_roi: np.ndarray,
     image_roi_bw: np.ndarray,
@@ -117,7 +117,6 @@ def _best_contour_center(
     search_radius: int | None = None,
     y_limits: tuple[int, int] | None = None,
 ) -> tuple[int, int] | None:
-
     contours, _ = cv2.findContours(image_roi_bw, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     if not contours:
         return None
@@ -146,7 +145,6 @@ def _best_contour_center(
             center=center, roi_x_range=roi_x_range, prev_xy=prev_xy, search_radius=search_radius
         ):
             continue
-
         if score > best_score:
             best_score = score
             best = (center[0] + roi_x_range[0], center[1])
@@ -172,7 +170,7 @@ def _black_and_white(image: np.ndarray, detection_config: DetectionConfig) -> np
     return image_bw
 
 
-def _detect_marker(
+def _detect_blob(  # pylint: disable=too-many-arguments
     *,
     image_gray: np.ndarray,
     roi_x_range: tuple[int, int],
@@ -200,6 +198,50 @@ def _detect_marker(
     if contour_center is None:
         return None
     return contour_center[0], contour_center[1], image_roi_bw
+
+
+def _detect_marker(  # pylint: disable=too-many-arguments
+    *,
+    image_gray: np.ndarray,
+    roi_x_range: tuple[int, int],
+    y_gate: tuple[int, int],
+    first_frame: bool,
+    template: np.ndarray,
+    tracker_config: TrackerConfig,
+    prev_xy: tuple[int, int] | None = None,
+) -> tuple[int | None, int | None, np.ndarray | None]:
+    x, y, dbg_mask = None, None, None
+    # 1) Try template tracking first
+    tx, ty = (None, None)
+    if tracker_config.template.enabled and prev_xy is not None:
+        tx, ty = _match_template(
+            image_gray=image_gray,
+            roi_x_range=roi_x_range,
+            y_limits=y_gate,
+            template=template,
+            template_config=tracker_config.template,
+        )
+
+    if tx is not None and ty is not None:
+        x, y = tx, ty
+    else:
+        # 2) Fallback to blob detection inside current ROI
+        search_r = (
+            tracker_config.gate.init_search_radius
+            if first_frame
+            else tracker_config.gate.track_search_radius
+        )
+        det = _detect_blob(
+            image_gray=image_gray,
+            roi_x_range=roi_x_range,
+            detection_config=tracker_config.det,
+            prev_xy=prev_xy,
+            search_radius=search_r,
+            y_limits=y_gate,
+        )
+        if det is not None:
+            x, y, dbg_mask = det
+    return x, y, dbg_mask
 
 
 def _get_manual_seed(cap: cv2.VideoCapture) -> tuple[int, int]:
@@ -285,7 +327,7 @@ def _make_writer(path: str | None, fps: float, width: int, height: int) -> cv2.V
     return cv2.VideoWriter(path, fourcc, fps, (width, height))
 
 
-def track_video(
+def track_video(  # pylint: disable=too-many-locals,  too-many-statements
     *, video_path: Path, csv_path: Path, debug_video_path: Path, plot_path: Path, cfg: TrackerConfig
 ) -> None:
     """Track marker with manual seed, dynamic ROI, and gated search."""
@@ -336,36 +378,15 @@ def track_video(
 
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
-        x, y, dbg_mask = None, None, None
-
-        # 1) Try template tracking first
-        tx, ty = (None, None)
-        if cfg.template.enabled and prev_xy is not None:
-            tx, ty = _match_template(
-                image_gray=gray,
-                roi_x_range=roi_x_range,
-                y_limits=y_gate,
-                template=template,
-                template_config=cfg.template,
-            )
-
-        if tx is not None and ty is not None:
-            x, y = tx, ty
-        else:
-            # 2) Fallback to blob detection inside current ROI
-            search_r = (
-                cfg.gate.init_search_radius if not frame_idx else cfg.gate.track_search_radius
-            )
-            det = _detect_marker(
-                image_gray=gray,
-                roi_x_range=roi_x_range,
-                detection_config=cfg.det,
-                prev_xy=prev_xy,
-                search_radius=search_r,
-                y_limits=y_gate,
-            )
-            if det is not None:
-                x, y, dbg_mask = det
+        x, y, dbg_mask = _detect_marker(
+            image_gray=gray,
+            roi_x_range=roi_x_range,
+            y_gate=y_gate,
+            first_frame=not frame_idx,
+            template=template,
+            tracker_config=cfg,
+            prev_xy=prev_xy,
+        )
 
         # 3) If we have a position, update state and refresh template a little
         if x is not None and y is not None:
